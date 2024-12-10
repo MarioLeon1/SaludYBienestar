@@ -2,11 +2,26 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const promBundle = require('express-prom-bundle');
 const { db, initDatabase } = require('./database');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+const metricsMiddleware = promBundle({
+  includeMethod: true,
+  includePath: true,
+  includeStatusCode: true,
+  includeUp: true,
+  customLabels: {app: 'syb-api'},
+  promClient: {
+    collectDefaultMetrics: {
+      timeout: 5000
+    }
+  }
+});
+
+app.use(metricsMiddleware);
 app.use(cors());
 app.use(express.json());
 app.use(express.static('../'));
