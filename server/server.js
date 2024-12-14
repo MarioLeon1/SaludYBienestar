@@ -1,13 +1,8 @@
+// ... otros imports
 const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const promBundle = require('express-prom-bundle');
-const { db, initDatabase } = require('./database');
 
-const app = express();
-const port = process.env.PORT || 3000;
-
+// Configurar el middleware de Prometheus
 const metricsMiddleware = promBundle({
   includeMethod: true,
   includePath: true,
@@ -16,77 +11,99 @@ const metricsMiddleware = promBundle({
   customLabels: {app: 'syb-api'},
   promClient: {
     collectDefaultMetrics: {
-      timeout: 5000
+      timeout: 1000
     }
   }
 });
+const cors = require('cors');
+const bcryptjs = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { db, initDatabase } = require('./database');
 
-app.use(metricsMiddleware);
+const app = express();
+const port = process.env.PORT || 3000;
+
 app.use(cors());
 app.use(express.json());
-app.use(express.static('../'));
+app.use(metricsMiddleware);
 
-// Inicializar la base de datos
-initDatabase();
+// Añade esto después de app.use(express.json());
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+  console.log('Body:', req.body);
+  next();
+});
 
-// Registro de usuarios
-app.post('/api/register', async (req, res) => {
+// Registro de usuarios con más logs
+app.post('/register', async (req, res) => {
+  console.log('Recibida petición de registro:', req.body);
   const { name, email, password } = req.body;
 
   try {
-    // Verificar si el email ya existe
+    console.log('Verificando email existente');
     db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
       if (err) {
+        console.error('Error en la consulta:', err);
         return res.status(500).json({ message: 'Error en el servidor' });
       }
       if (user) {
+        console.log('Email ya registrado');
         return res.status(400).json({ message: 'El email ya está registrado' });
       }
 
-      // Hash de la contraseña
-      const hashedPassword = await bcrypt.hash(password, 10);
+      console.log('Hasheando contraseña');
+      const hashedPassword = await bcryptjs.hash(password, 10);
 
-      // Insertar nuevo usuario
+      console.log('Insertando nuevo usuario');
       db.run('INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
         [name, email, hashedPassword],
         (err) => {
           if (err) {
+            console.error('Error al insertar:', err);
             return res.status(500).json({ message: 'Error al registrar usuario' });
           }
+          console.log('Usuario registrado exitosamente');
           res.status(201).json({ message: 'Usuario registrado exitosamente' });
         }
       );
     });
   } catch (error) {
-    console.error(error);
+    console.error('Error en el registro:', error);
     res.status(500).json({ message: 'Error en el servidor' });
   }
 });
 
-// Login de usuarios
-app.post('/api/login', (req, res) => {
+// Login de usuarios con más logs
+app.post('/login', (req, res) => {
+  console.log('Recibida petición de login:', req.body);
   const { email, password } = req.body;
 
   db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
     if (err) {
+      console.error('Error en la consulta:', err);
       return res.status(500).json({ message: 'Error en el servidor' });
     }
     if (!user) {
+      console.log('Usuario no encontrado');
       return res.status(401).json({ message: 'Credenciales inválidas' });
     }
 
     try {
-      const validPassword = await bcrypt.compare(password, user.password);
+      console.log('Verificando contraseña');
+      const validPassword = await bcryptjs.compare(password, user.password);
       if (!validPassword) {
+        console.log('Contraseña incorrecta');
         return res.status(401).json({ message: 'Credenciales inválidas' });
       }
 
+      console.log('Generando token');
       const token = jwt.sign(
         { userId: user.id, email: user.email },
         process.env.JWT_SECRET || 'tu_secreto_jwt',
         { expiresIn: '24h' }
       );
 
+      console.log('Login exitoso');
       res.json({
         token,
         user: {
@@ -96,12 +113,13 @@ app.post('/api/login', (req, res) => {
         }
       });
     } catch (error) {
-      console.error(error);
+      console.error('Error en la verificación:', error);
       res.status(500).json({ message: 'Error en el servidor' });
     }
   });
 });
 
+initDatabase();
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
